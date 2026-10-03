@@ -855,9 +855,12 @@ def run_in_herdr(task, provider_cfg: dict, on_blocked=None, timeout: int = None,
             agent_args += ["--effort", eff]
         if task.session_id:
             agent_args += ["--resume", task.session_id]
-        if (task.skip_permissions
-                and "--dangerously-skip-permissions" not in agent_args):
-            agent_args.append("--dangerously-skip-permissions")
+        permission_flag = (
+            "--dangerously-bypass-approvals-and-sandbox" if kind == "codex"
+            else "--dangerously-skip-permissions"
+        )
+        if task.skip_permissions and permission_flag not in agent_args:
+            agent_args.append(permission_flag)
         if not host and guard_enabled(provider_cfg, task.skip_permissions):
             # Local only: the settings file with the hook lives on this machine.
             settings = guard_settings_file()

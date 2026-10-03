@@ -314,8 +314,12 @@ def test_cancel_before_herdr_creation_never_opens_a_tab(monkeypatch):
     assert "before the herdr session was created" in outcome["cancel_note"]
 
 
+@pytest.mark.parametrize("kind,args,expected_flag", [
+    ("agy", ["--dangerously-skip-permissions"], "--dangerously-skip-permissions"),
+    ("codex", [], "--dangerously-bypass-approvals-and-sandbox"),
+])
 def test_herdr_deduplicates_permission_flag_and_forwards_pipeline_paths(
-        monkeypatch, tmp_path):
+        monkeypatch, tmp_path, kind, args, expected_flag):
     calls = []
 
     def fake_run(args, host=None, timeout=None):
@@ -354,12 +358,14 @@ def test_herdr_deduplicates_permission_flag_and_forwards_pipeline_paths(
 
     outcome = herdr_exec.run_in_herdr(
         task,
-        {"kind": "agy", "args": ["--dangerously-skip-permissions"]},
+        {"kind": kind, "args": args},
         prompt_override="test prompt",
     )
 
     start = next(call for call in calls if call[:2] == ["agent", "start"])
-    assert start.count("--dangerously-skip-permissions") == 1
+    assert start.count(expected_flag) == 1
+    if kind == "codex":
+        assert "--dangerously-skip-permissions" not in start
     tab = next(call for call in calls if call[:2] == ["tab", "create"])
     assert f"PP_DATA_DIR={tmp_path}" in tab
     assert (
