@@ -150,3 +150,42 @@ def test_expired_or_deleted_caller_tokens_are_invalid(isolated_db, monkeypatch):
     assert context.verify_token(valid) == task.id
     assert db.delete_task(task.id)
     assert context.verify_token(valid) is None
+
+
+def test_snapshot_read_survives_writer_committing_between_read_and_persistence(isolated_db, tmp_path, monkeypatch):
+    from promptpilot import task_context as context
+    current, target = tasks(tmp_path)
+    original = context._snapshot
+    def snapshot_with_concurrent_writer(task, conn):
+        frozen = original(task, conn)
+        with db._connect() as writer:
+            writer.execute("UPDATE tasks SET priority=1 WHERE id=?", (task.id,))
+        return frozen
+    monkeypatch.setattr(context, "_snapshot", snapshot_with_concurrent_writer)
+    page = context.read_task(target.id, current.id)
+    assert [m["text"] for m in page["messages"]] == ["target"]
+    assert db.get_task(target.id).priority == 1
+
+
+def test_legacy_note_does_not_hide_original_prompt(isolated_db, tmp_path):
+    from promptpilot import task_context as context
+    current, target = tasks(tmp_path)
+    with db._connect() as conn:
+        conn.execute("DELETE FROM task_messages WHERE task_id=?", (target.id,))
+    db.set_note(target.id, "new clarification")
+    page = context.read_task(target.id, current.id)
+    assert [m["text"] for m in page["messages"]] == ["target", "new clarification"]
+    assert "legacy_unavailable" in page["coverage"]["gaps"]
+
+
+def test_deletion_between_snapshot_read_and_persistence_returns_not_found(isolated_db, tmp_path, monkeypatch):
+    from promptpilot import task_context as context
+    current, target = tasks(tmp_path)
+    original = context._snapshot
+    def snapshot_then_delete(task, conn):
+        frozen = original(task, conn)
+        assert db.delete_task(task.id)
+        return frozen
+    monkeypatch.setattr(context, "_snapshot", snapshot_then_delete)
+    with pytest.raises(LookupError):
+        context.read_task(target.id, current.id)

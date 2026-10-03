@@ -143,6 +143,8 @@ def test_two_tasks_in_existing_herdr_pane_have_separate_history_and_real_project
     assert [m["text"] for m in history.list_messages(task_ids[0])] == ["task 1", "answer 1"]
     assert [m["text"] for m in history.list_messages(task_ids[1])] == ["task 2", "answer 2"]
     assert submitted[0] != submitted[1]
+    session.unlink()  # The original session storage is gone; PromptPilot retains the messages.
+    assert [m["text"] for m in context.read_task(task_ids[0], task_ids[1])["messages"]] == ["task 1", "answer 1"]
 
 
 def test_delivery_storage_failure_does_not_abort_provider_task(isolated_db, tmp_path, monkeypatch):
@@ -181,3 +183,36 @@ def test_detached_history_explicitly_reports_absent_capture(isolated_db, tmp_pat
     page = context.read_task(task.id, task.id)
     assert [m["text"] for m in page["messages"]] == ["task"]
     assert "detached_no_capture" in page["coverage"]["gaps"]
+
+
+def test_running_snapshot_and_cancellation_preserve_already_received_answer(isolated_db, tmp_path, monkeypatch):
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+    script = tmp_path / "running.py"
+    script.write_text(
+        "import json,time,sys\n"
+        "sys.stdin.read()\n"
+        "print(json.dumps({'type':'item.completed','item':{'id':'progress','type':'agent_message','text':'Current progress'}}),flush=True)\n"
+        "time.sleep(20)\n", encoding="utf-8")
+    monkeypatch.setattr(worker, "load_providers", lambda: {"running": {"prompt_stdin": True}})
+    monkeypatch.setattr(worker, "build_cmd", lambda *_a, **_k: [sys.executable, str(script)])
+    monkeypatch.setattr(worker, "get_provider_env", lambda _provider: os.environ.copy())
+    db.create_task(TaskCreate(prompt="task", provider="running", working_dir=str(tmp_path)))
+    task = db.get_next_runnable()
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(worker.execute_task, task)
+        try:
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                if any(m["text"] == "Current progress" for m in history.list_messages(task.id)):
+                    break
+                time.sleep(0.05)
+            assert not future.done()
+            page = context.read_task(task.id, task.id)
+            assert page["task"]["status"] == "running"
+            assert [m["text"] for m in page["messages"]] == ["task", "Current progress"]
+        finally:
+            db.request_cancel(task.id)
+            future.result(timeout=10)
+    assert db.get_task(task.id).status.value == "cancelled"
+    assert [m["text"] for m in history.list_messages(task.id)] == ["task", "Current progress"]

@@ -83,8 +83,8 @@
 
 **Files:** update `README.md`, review record and this plan.
 
-- [ ] Document natural-language scenarios, CLI and API, remote URL, partial history, legacy limits, snapshot expiry and deletion behavior; keep protocol details out of product UI.
-- [ ] Run `./.venv/Scripts/python.exe -m pytest -q` and `./.venv/Scripts/python.exe -m ruff check promptpilot tests tools main.py`; check `git diff --check`.
-- [ ] Request independent whole-change review with gpt-6.1-sol high (user-requested sol). Supply spec, plan, base `62ab91c`, final HEAD and verification results.
-- [ ] Verify findings against code; fix real critical/important issues with reproducing RED→GREEN tests. Repeat affected checks and full suite after changes.
-- [ ] Audit every spec scenario against actual code/tests, record final limitations and review results, commit and leave the branch ready for review. No merge/push/deploy requested.
+- [x] Document natural-language scenarios, CLI and API, remote URL, partial history, legacy limits, snapshot expiry and deletion behavior; keep protocol details out of product UI.
+- [x] Run `./.venv/Scripts/python.exe -m pytest -q` and `./.venv/Scripts/python.exe -m ruff check promptpilot tests tools main.py`; check `git diff --check`.
+- [x] Request independent whole-change review with gpt-6.1-sol high (user-requested sol). Supply spec, plan, base `62ab91c`, final HEAD and verification results.
+- [x] Verify findings against code; fix real critical/important issues with reproducing RED→GREEN tests. Repeat affected checks and full suite after changes.
+- [x] Audit every spec scenario against actual code/tests, record final limitations and review results, commit and leave the branch ready for review. No merge/push/deploy requested.

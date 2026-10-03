@@ -79,12 +79,16 @@ def read_sessions(marker: str, since: float, roots=None, stop_at=None) -> dict:
                 if start:
                     stream.readline()  # Omit a potentially cut first JSON record.
                     gaps.append("session_prefix_omitted")
-                lines = stream.read(MAX_FILE_BYTES).decode("utf-8", errors="replace").splitlines(keepends=True)
+                byte_offset = stream.tell()
+                lines = stream.read(MAX_FILE_BYTES).splitlines(keepends=True)
         except OSError:
             discovery_gaps.append("session_file_unreadable")
             continue
         path_key = hashlib.sha256(str(path).encode()).hexdigest()[:16]
-        for index, line in enumerate(lines):
+        for raw_line in lines:
+            record_offset = byte_offset
+            byte_offset += len(raw_line)
+            line = raw_line.decode("utf-8", errors="replace")
             try:
                 event = json.loads(line)
                 if not isinstance(event, dict):
@@ -111,7 +115,7 @@ def read_sessions(marker: str, since: float, roots=None, stop_at=None) -> dict:
                     break  # Never traverse into another task in the same provider session.
             if active:
                 messages.append({"role": role, "text": text,
-                                 "source_key": f"session:{path_key}:{source_id or index}",
+                                 "source_key": f"session:{path_key}:{source_id or record_offset}",
                                  "partial": False})
         if matched:
             matches.append({"matched": True, "messages": messages,

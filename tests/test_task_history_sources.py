@@ -113,3 +113,25 @@ def test_remote_session_reader_runs_standalone_through_transport(isolated_db, tm
     collector = history.SessionCollector(task.id, attempt, "remote-marker", host=remote.Remote("test.invalid"))
     collector.capture()
     assert [m["text"] for m in history.list_messages(task.id)] == ["task", "Remote answer"]
+
+
+def test_session_capture_dedup_survives_tail_start_moving(isolated_db, tmp_path, monkeypatch):
+    from promptpilot import task_history_source as source
+    root = tmp_path / "codex"
+    sessions = root / "sessions"
+    sessions.mkdir(parents=True)
+    marker = {"type": "response_item", "payload": {"type": "message", "role": "user", "content": [
+        {"type": "input_text", "text": '<promptpilot-task-context boundary="moving-marker">'}]}}
+    answer = {"type": "response_item", "payload": {"type": "message", "role": "assistant", "content": [
+        {"type": "output_text", "text": "answer without provider message ID"}]}}
+    path = sessions / "session.jsonl"
+    path.write_text("{}\n" * 1000 + json.dumps(marker) + "\n" + json.dumps(answer) + "\n", encoding="utf-8")
+    monkeypatch.setattr(source, "MAX_FILE_BYTES", 1000)
+    task = db.create_task(TaskCreate(prompt="task"))
+    attempt = history.begin_attempt(task.id, "session", None)
+    collector = history.SessionCollector(task.id, attempt, "moving-marker", env={"CODEX_HOME": str(root)})
+    collector.capture()
+    with path.open("a", encoding="utf-8") as stream:
+        stream.write("{}\n" * 10)
+    collector.capture()
+    assert [m["text"] for m in history.list_messages(task.id)] == ["task", "answer without provider message ID"]

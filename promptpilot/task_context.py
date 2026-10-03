@@ -131,15 +131,16 @@ def _project(task, conn, cache=None):
 def _snapshot(task, conn) -> dict:
     attempts = history.list_attempts(task.id, conn=conn)
     messages = history.list_messages(task.id, conn=conn)
+    has_prompt = any(message["source_key"] == "prompt" for message in messages)
     gaps = list(dict.fromkeys(g for a in attempts for g in a["gaps"]))
     if not attempts:
-        gaps.append("not_started" if messages else "legacy_unavailable")
+        gaps.append("not_started" if has_prompt else "legacy_unavailable")
     elif any(a["completed_at"] is None for a in attempts):
         gaps.append("execution_in_progress")
-    if not messages:
+    if not has_prompt:
         messages = [{"id": 0, "task_id": task.id, "attempt_id": None, "source_key": "legacy_prompt",
                      "role": "user", "text": task.prompt, "created_at": task.created_at.isoformat(),
-                     "partial": False, "delivered_to": []}]
+                     "partial": False, "delivered_to": []}, *messages]
     return {"task": {"task_id": task.id, "status": task.status.value,
                       "project": _project(task, conn), "working_dir": task.working_dir,
                       "machine": task.machine, "branch": task.worktree_branch,
@@ -178,28 +179,35 @@ def read_task(task_id: int, current_task_id: int, cursor: str | None = None,
             payload = _snapshot(task, conn)
             snapshot_id = secrets.token_urlsafe(24)
             index, offset = 0, 0
+    if not cursor:
+        # Persist the frozen payload in a fresh write transaction. A live task may
+        # commit during the read; upgrading that WAL snapshot would fail.
+        with db._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            if not db.get_task(task_id, conn=conn) or not db.get_task(current_task_id, conn=conn):
+                raise LookupError("Task not found")
             conn.execute("DELETE FROM task_context_snapshots WHERE expires_at<=?", (time.time(),))
             conn.execute("INSERT INTO task_context_snapshots VALUES (?, ?, ?, ?, ?)",
                          (snapshot_id, task_id, current_task_id, time.time() + 3600,
                           json.dumps(payload, ensure_ascii=False)))
-        messages = payload["messages"]
-        if index > len(messages) or (index < len(messages) and offset > len(messages[index]["text"])):
-            raise ValueError("Invalid cursor position")
-        page, remaining = [], limit
-        while index < len(messages) and remaining:
-            message = messages[index]
-            fragment = message["text"][offset:offset + remaining]
-            end = offset + len(fragment)
-            page.append({**message, "text": fragment, "char_offset": offset,
-                         "message_end": end == len(message["text"])})
-            remaining -= len(fragment)
-            if end == len(message["text"]):
-                index, offset = index + 1, 0
-            else:
-                offset = end
-        next_cursor = _encode([snapshot_id, index, offset]) if index < len(messages) else None
-        return {**payload, "messages": page, "next_cursor": next_cursor,
-                "instance_id": origin, "snapshot_id": snapshot_id}
+    messages = payload["messages"]
+    if index > len(messages) or (index < len(messages) and offset > len(messages[index]["text"])):
+        raise ValueError("Invalid cursor position")
+    page, remaining = [], limit
+    while index < len(messages) and remaining:
+        message = messages[index]
+        fragment = message["text"][offset:offset + remaining]
+        end = offset + len(fragment)
+        page.append({**message, "text": fragment, "char_offset": offset,
+                     "message_end": end == len(message["text"])})
+        remaining -= len(fragment)
+        if end == len(message["text"]):
+            index, offset = index + 1, 0
+        else:
+            offset = end
+    next_cursor = _encode([snapshot_id, index, offset]) if index < len(messages) else None
+    return {**payload, "messages": page, "next_cursor": next_cursor,
+            "instance_id": origin, "snapshot_id": snapshot_id}
 
 
 def search_tasks(current_task_id: int, query: str = "", all_projects: bool = False,
