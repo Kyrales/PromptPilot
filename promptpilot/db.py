@@ -495,6 +495,8 @@ def _init_db_once():
         # Bootstrap it once; foreign_keys remains per-connection in _connect.
         conn.execute("PRAGMA journal_mode=WAL")
         conn.executescript(SCHEMA)
+        from . import task_history
+        conn.executescript(task_history.SCHEMA)
         # Run migrations for existing databases
         for migration in MIGRATIONS:
             try:
@@ -1073,6 +1075,8 @@ def _insert_task(conn: sqlite3.Connection, task: TaskCreate) -> TaskInDB:
             series_id,
         ),
     )
+    from . import task_history
+    task_history.record_user(conn, cur.lastrowid, task.prompt, "prompt")
     return get_task(cur.lastrowid, conn=conn)
 
 
@@ -1263,6 +1267,9 @@ def set_note(task_id: int, text: str) -> bool:
     with _connect() as conn:
         cur = conn.execute("UPDATE tasks SET note = ? WHERE id = ?",
                            (text or None, task_id))
+        if cur.rowcount and text:
+            from . import task_history
+            task_history.record_user(conn, task_id, text, "note:" + uuid.uuid4().hex)
         return cur.rowcount > 0
 
 
