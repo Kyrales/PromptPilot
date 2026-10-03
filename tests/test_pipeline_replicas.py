@@ -1,5 +1,6 @@
 import os
 import sqlite3
+from contextlib import closing
 import subprocess
 import sys
 import time
@@ -402,7 +403,7 @@ def test_quarantine_heartbeat_does_not_wait_for_cleanup_backoff(
 
 
 def test_reservation_schema_has_versioned_migration(isolated_db):
-    with sqlite3.connect(isolated_db.DB_PATH) as conn:
+    with closing(sqlite3.connect(isolated_db.DB_PATH)) as conn, conn:
         table = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' "
             "AND name='pipeline_target_reservations'"

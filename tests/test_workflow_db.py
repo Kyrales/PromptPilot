@@ -1,4 +1,5 @@
 import sqlite3
+from contextlib import closing
 import time
 
 import pytest
@@ -35,7 +36,7 @@ def test_legacy_database_gets_w0_tables_without_losing_task(tmp_path, monkeypatc
     legacy_schema = db.SCHEMA.split(
         "CREATE TABLE IF NOT EXISTS workflows", 1
     )[0]
-    with sqlite3.connect(legacy_path) as conn:
+    with closing(sqlite3.connect(legacy_path)) as conn, conn:
         conn.executescript(legacy_schema)
         conn.execute(
             """INSERT INTO tasks (prompt, status, priority, created_at)
@@ -59,7 +60,7 @@ def test_w2_database_gets_stage_planner_columns_and_tables(tmp_path, monkeypatch
     from promptpilot import db
 
     legacy_path = tmp_path / "w2.db"
-    with sqlite3.connect(legacy_path) as conn:
+    with closing(sqlite3.connect(legacy_path)) as conn, conn:
         conn.executescript("""
             CREATE TABLE workflows (
                 id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE,

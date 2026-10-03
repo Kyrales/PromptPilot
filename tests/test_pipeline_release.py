@@ -5,6 +5,7 @@ import json
 import os
 import plistlib
 import sqlite3
+from contextlib import closing
 import sys
 
 import pytest
@@ -118,7 +119,7 @@ def test_public_installer_preserves_pauses_and_rolls_back_launch_failure(tmp_pat
     rows = [{"id": number, "title": "OneBase - " + stage, "paused": number == 3,
              "prompt": f"Read CLAUDE.md canonical .claude/skills/{stage}/SKILL.md"}
             for number, stage in release.STAGES.items()]
-    with sqlite3.connect(data / "promptpilot.db") as connection:
+    with closing(sqlite3.connect(data / "promptpilot.db")) as connection, connection:
         connection.executescript("CREATE TABLE task_series(id INTEGER, prompt TEXT, ended_at TEXT, paused INTEGER);"
                                  "CREATE TABLE tasks(series_id INTEGER, status TEXT, prompt TEXT);")
         for row in rows:
@@ -153,7 +154,7 @@ def test_public_installer_preserves_pauses_and_rolls_back_launch_failure(tmp_pat
         release.main()
         assert json.loads((tmp_path / "installed.json").read_text())["worker"]["paused"] is True
         assert len(restarted) == 3
-    with sqlite3.connect(data / "promptpilot.db") as connection:
+    with closing(sqlite3.connect(data / "promptpilot.db")) as connection, connection:
         assert connection.execute("SELECT paused FROM task_series WHERE id=3").fetchone()[0] == 1
         for row in rows:
             prompt = connection.execute("SELECT prompt FROM task_series WHERE id=?", (row["id"],)).fetchone()[0]

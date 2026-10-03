@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import sqlite3
+from contextlib import closing
 import subprocess
 import sys
 import threading
@@ -2515,7 +2516,7 @@ def test_budget_waiter_fairness_migrates_legacy_database(
     legacy_schema = database.SCHEMA.replace(
         "    budget_wait_started_at TEXT,\n", "")
     assert legacy_schema != database.SCHEMA
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn, conn:
         conn.executescript(legacy_schema)
         conn.execute(
             """INSERT INTO tasks
@@ -2528,7 +2529,7 @@ def test_budget_waiter_fairness_migrates_legacy_database(
     database.init_db()
     database.init_db()
 
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn, conn:
         columns = {row[1] for row in conn.execute(
             "PRAGMA table_info(tasks)").fetchall()}
         indexes = {row[1] for row in conn.execute(

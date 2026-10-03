@@ -12,6 +12,7 @@ from pathlib import Path
 import plistlib
 import re
 import sqlite3
+from contextlib import closing
 import subprocess
 import time
 from urllib.request import Request, urlopen
@@ -199,7 +200,7 @@ def install(args):
         subprocess.run(["launchctl", "bootstrap", f"gui/{uid}", str(path)], check=True, capture_output=True)
     try:
         # Narrow transactional prompt CAS. Never restore the whole live DB.
-        with sqlite3.connect(args.data / "promptpilot.db", timeout=10) as connection:
+        with closing(sqlite3.connect(args.data / "promptpilot.db", timeout=10)) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             if connection.execute("SELECT count(*) FROM tasks WHERE status='running'").fetchone()[0]:
                 raise RuntimeError("task started during release preparation")
@@ -245,7 +246,7 @@ def install(args):
                 raise RuntimeError("rollback refused: concurrent file edit")
             atomic_bytes(path, old_files[path])
         if db_changed:
-            with sqlite3.connect(args.data / "promptpilot.db", timeout=10) as connection:
+            with closing(sqlite3.connect(args.data / "promptpilot.db", timeout=10)) as connection, connection:
                 connection.execute("BEGIN IMMEDIATE")
                 for series_id, old, new in patches:
                     if connection.execute("UPDATE task_series SET prompt=? WHERE id=? AND prompt=?",
