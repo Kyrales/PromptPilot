@@ -2,6 +2,7 @@
 
 import asyncio
 import base64
+import re
 import secrets
 import subprocess
 import sys
@@ -11,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import Response
 from pydantic import BaseModel
@@ -113,12 +114,22 @@ async def _auth(request, call_next):
     browser could POST to the loopback server (no token by default) and queue a
     task that runs with --dangerously-skip-permissions. curl/scripts don't send
     Sec-Fetch-Site, so they're unaffected."""
+    header = request.headers.get("authorization", "")
+    if header.startswith("Bearer ppctx."):
+        from . import task_context
+        allowed = (request.method == "GET" and (
+            request.url.path == "/api/context/search"
+            or re.fullmatch(r"/api/context/read/\d+", request.url.path)))
+        task_id = task_context.verify_token(header[7:].strip()) if allowed else None
+        if task_id is None:
+            return Response(status_code=401)
+        request.state.context_task_id = task_id
+        return await call_next(request)
     if request.method not in _SAFE_METHODS:
         if request.headers.get("sec-fetch-site") == "cross-site":
             return Response(status_code=403, content="cross-site request refused")
     if not API_TOKEN:
         return await call_next(request)
-    header = request.headers.get("authorization", "")
     ok = False
     if header.startswith("Bearer "):
         ok = secrets.compare_digest(header[7:].strip(), API_TOKEN)
@@ -148,6 +159,38 @@ _INDEX_HTML = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
 
 
 # --- API ---
+
+def _context_caller(request: Request, current_task_id: int | None):
+    caller = getattr(request.state, "context_task_id", None)
+    if caller is not None:
+        return caller
+    if current_task_id is None:
+        raise HTTPException(400, "current_task_id is required")
+    return current_task_id
+
+
+def _context_call(call, *args, **kwargs):
+    try:
+        return call(*args, **kwargs)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.get("/api/context/read/{task_id}")
+def api_context_read(request: Request, task_id: int, current_task_id: int | None = None,
+                     cursor: str | None = None, limit: int = Query(12000, ge=1, le=12000)):
+    from . import task_context
+    return _context_call(task_context.read_task, task_id, _context_caller(request, current_task_id), cursor, limit)
+
+
+@app.get("/api/context/search")
+def api_context_search(request: Request, current_task_id: int | None = None,
+                       query: str = Query("", max_length=500), all_projects: bool = False,
+                       offset: int = Query(0, ge=0)):
+    from . import task_context
+    return _context_call(task_context.search_tasks, _context_caller(request, current_task_id), query, all_projects, offset)
 
 def _task_with_epf(task: TaskInDB) -> dict:
     """TaskInDB + карточка 1С-доработки (epf_jobs), если задача из /epf."""

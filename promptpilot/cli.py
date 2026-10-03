@@ -97,7 +97,7 @@ def _status_color(status: str) -> str:
 def cli(ctx):
     """PromptPilot — AI Prompt Scheduler"""
     if ctx.invoked_subcommand is None:
-        # Default: launch tray app when run without arguments. On a headless
+# Default: launch tray app when run without arguments. On a headless
         # server (no display, or pystray/Pillow missing) this can't work — show
         # help instead of dying with a traceback.
         try:
@@ -309,6 +309,45 @@ def status(task_id):
         click.echo(f"\n  Result:\n    {task.result[:500]}")
     if task.error:
         click.echo(f"\n  Error:\n    {task.error[:500]}")
+
+
+@cli.group("context")
+@click.option("--access-file", required=True, type=click.Path(exists=True, dir_okay=False),
+              help="Task-specific access file supplied by the executing PromptPilot instance.")
+@click.pass_context
+def context_group(ctx, access_file):
+    """Read conversation context only on an explicit user request."""
+    ctx.obj = access_file
+
+
+def _print_context(access_file, operation, **params):
+    import json
+    from .task_context import access_request
+    try:
+        result = access_request(access_file, operation, **params)
+    except Exception as exc:
+        raise click.ClickException(f"Context unavailable: {exc}") from exc
+    click.echo(json.dumps(result, ensure_ascii=False))
+
+
+@context_group.command("read")
+@click.argument("task_id", type=click.IntRange(min=1))
+@click.option("--cursor", default=None)
+@click.option("--limit", default=12000, type=click.IntRange(1, 12000))
+@click.pass_obj
+def context_read(access_file, task_id, cursor, limit):
+    """Read only this task; continuation tasks are not included."""
+    _print_context(access_file, "read", task_id=task_id, cursor=cursor, limit=limit)
+
+
+@context_group.command("search")
+@click.argument("query", default="")
+@click.option("--all-projects", is_flag=True, help="Only when the user requests other projects.")
+@click.option("--offset", default=0, type=click.IntRange(min=0))
+@click.pass_obj
+def context_search(access_file, query, all_projects, offset):
+    """Search current-project tasks; return at most ten brief cards."""
+    _print_context(access_file, "search", query=query, all_projects=all_projects, offset=offset)
 
 
 @cli.command()
