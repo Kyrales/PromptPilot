@@ -128,3 +128,25 @@ def test_cli_access_file_pins_source_and_never_falls_back(isolated_db, tmp_path,
     result = runner.invoke(cli, ["context", "--access-file", str(access), "read", str(target.id)])
     assert result.exit_code != 0
     assert '"task_id"' not in result.output
+
+
+def test_unicode_search_snippet_locates_expanded_casefold_match(isolated_db, tmp_path):
+    from promptpilot import task_context as context
+    current, target = tasks(tmp_path)
+    attempt = history.begin_attempt(target.id, "structured", context.project_identity(target.working_dir))
+    history.append_message(target.id, attempt, "assistant", "x" * 1000 + "SS" * 10 + " match", "answer")
+    result = context.search_tasks(current.id, "ß" * 10)
+    assert "SS" * 10 in result["tasks"][0]["snippet"]
+
+
+def test_expired_or_deleted_caller_tokens_are_invalid(isolated_db, monkeypatch):
+    from promptpilot import task_context as context
+    task = db.create_task(TaskCreate(prompt="caller"))
+    with monkeypatch.context() as clock:
+        clock.setattr(context.time, "time", lambda: 0)
+        expired = context.issue_token(task.id)
+    assert context.verify_token(expired) is None
+    valid = context.issue_token(task.id)
+    assert context.verify_token(valid) == task.id
+    assert db.delete_task(task.id)
+    assert context.verify_token(valid) is None

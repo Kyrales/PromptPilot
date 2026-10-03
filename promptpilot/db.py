@@ -496,7 +496,7 @@ def _init_db_once():
         conn.execute("PRAGMA journal_mode=WAL")
         conn.executescript(SCHEMA)
         from . import task_history
-        conn.executescript(task_history.SCHEMA)
+        task_history.initialize(conn)
         from . import task_context
         conn.executescript(task_context.SCHEMA)
         # Run migrations for existing databases

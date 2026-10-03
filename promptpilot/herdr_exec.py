@@ -887,6 +887,14 @@ def run_in_herdr(task, provider_cfg: dict, on_blocked=None, timeout: int = None,
         if on_started:
             on_started(pane_id)
 
+        from . import task_history
+        history_execution = task_history.active_execution.get()
+        if history_execution is not None and history_execution.attempt_id is not None:
+            if target:
+                actual_cwd = _dig(data, "result", "agent", "cwd") or _dig(data, "result", "agent", "foreground_cwd")
+                history_execution.set_project(actual_cwd, host)
+            prompt = history_execution.inject(prompt, host)
+
         # Detached: submit the prompt, confirm it landed, leave the pane open.
         if task.detached:
             rc, data, raw = _run(["agent", "prompt", name, prompt,
@@ -894,6 +902,8 @@ def run_in_herdr(task, provider_cfg: dict, on_blocked=None, timeout: int = None,
                                  host=host)
             if rc != 0 and _error_code(data) not in ("timeout", "agent_prompt_stalled"):
                 return fail(f"herdr agent prompt failed: {raw}")
+            if history_execution is not None:
+                history_execution.delivered()
             outcome["ok"] = True
             outcome["output"] = (f"Отправлено в сессию {name} (панель {pane_id})" if target
                                  else f"Запущен в herdr (панель {pane_id}) — подключись командой: {attach}")
@@ -914,16 +924,22 @@ def run_in_herdr(task, provider_cfg: dict, on_blocked=None, timeout: int = None,
             rc, data, raw = _run(prompt_cmd, host=host)
             if rc == 0:
                 state = _agent_status(data)
+                if history_execution is not None:
+                    history_execution.delivered()
                 break
             code = _error_code(data)
             if code == "timeout":
                 # prompt landed, agent is busy — fall into the chunked wait
                 state, raw = _wait_settled(name, [], deadline, cancel_check, host)
+                if history_execution is not None:
+                    history_execution.delivered()
                 break
             if code != "agent_prompt_stalled":
                 return fail(f"herdr agent prompt failed: {raw}")
             rc2, data2, _ = _run(["agent", "get", name], host=host)
             if rc2 == 0 and _agent_status(data2) == "working":
+                if history_execution is not None:
+                    history_execution.delivered()
                 state, raw = _wait_settled(name, [], deadline, cancel_check, host)
                 break
             # The text may be sitting unsent in the input box — some agent
@@ -937,6 +953,8 @@ def run_in_herdr(task, provider_cfg: dict, on_blocked=None, timeout: int = None,
             if rc3 == 0 and (_agent_status(data3) != "idle"
                              or _dig(data3, "result", "agent", "state_change_seq",
                                      default=-1) != seq_before):
+                if history_execution is not None:
+                    history_execution.delivered()
                 state, raw = _wait_settled(name, [], deadline, cancel_check, host)
                 break
             if attempt == PROMPT_STALL_RETRIES:

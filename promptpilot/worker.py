@@ -707,11 +707,13 @@ def _remember_stream_session(task_id: int, line: str) -> None:
         db.set_session_id(task_id, session_id)
 
 
-def _read_process_pipe(pipe, chunks: list[str], task_id: int | None = None) -> None:
+def _read_process_pipe(pipe, chunks: list[str], task_id: int | None = None, collector=None) -> None:
     """Drain one provider pipe without blocking the cancellation poll loop."""
     try:
         for line in iter(pipe.readline, ""):
             chunks.append(line)
+            if collector is not None:
+                collector.feed(line)
             if task_id is not None:
                 # HOTFIX: исключение здесь (напр. sqlite 'database is locked' из
                 # set_session_id) убивало поток-читатель, finally закрывал пайп,
@@ -1696,6 +1698,19 @@ def _execute_task_body(task, admission_complete=None):
             return
         host = machine_remote(m)
 
+    from . import task_history
+    history_execution = task_history.active_execution.get()
+    if history_execution is not None:
+        try:
+            history_execution.start(
+                "session" if provider_cfg.get("executor") == "herdr" else "structured",
+                host, get_provider_env(provider))
+        except Exception as exc:
+            print(f"  !! task history unavailable #{task.id}: {type(exc).__name__}", flush=True)
+            history_execution = None
+        if history_execution is not None and provider_cfg.get("executor") != "herdr":
+            agent_prompt = history_execution.inject(agent_prompt, host)
+
     if provider_cfg.get("executor") == "herdr":
         # herdr sessions work the same way on any machine: the CLI calls go
         # over ssh, the pane lives there (attach with `herdr --remote <host>`).
@@ -1830,10 +1845,14 @@ def _execute_task_body(task, admission_complete=None):
         try:
             proc.stdin.write(prompt_stdin)
             proc.stdin.close()
+            if history_execution is not None:
+                history_execution.delivered()
         except (BrokenPipeError, OSError, ValueError):
             pass
         finally:
             proc.stdin = None
+    elif history_execution is not None:
+        history_execution.delivered()
 
     # Drain both pipes while polling. Besides avoiding pipe deadlocks, the
     # stdout reader persists Codex/Claude session ids immediately, so a worker
@@ -1842,7 +1861,8 @@ def _execute_task_body(task, admission_complete=None):
     stdout_parts: list[str] = []
     stderr_parts: list[str] = []
     stdout_thread = threading.Thread(
-        target=_read_process_pipe, args=(proc.stdout, stdout_parts, task.id), daemon=True)
+        target=_read_process_pipe, args=(proc.stdout, stdout_parts, task.id,
+                                        history_execution.stream if history_execution is not None else None), daemon=True)
     stderr_thread = threading.Thread(
         target=_read_process_pipe, args=(proc.stderr, stderr_parts), daemon=True)
     stdout_thread.start()
@@ -2105,11 +2125,16 @@ def _execute_task_body(task, admission_complete=None):
 
 def _execute_task_inner(task, admission_complete=None):
     """Run one task and always release its exact GitHub budget reservation."""
+    from . import task_history
+    execution = task_history.Execution(task)
+    context_token = task_history.active_execution.set(execution)
     try:
         if admission_complete is None:
             return _execute_task_body(task)
         return _execute_task_body(task, admission_complete)
     finally:
+        execution.close()
+        task_history.active_execution.reset(context_token)
         try:
             from . import pipeline_insights
             pipeline_insights.release_execution_admission()

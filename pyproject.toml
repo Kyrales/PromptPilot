@@ -46,7 +46,7 @@ packages = ["promptpilot"]
 # Ship the Web UI with the package — without this the wheel has no
 # static/index.html and `pp server` serves a 404 at /.
 [tool.setuptools.package-data]
-promptpilot = ["static/*"]
+promptpilot = ["static/*", "task_history_source.py"]
 
 # CI runs `ruff check promptpilot tests tools main.py` with these rules.
 # Pyflakes-class only: real errors, not style.

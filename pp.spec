@@ -25,6 +25,7 @@ a = Analysis(
     datas=[
         # Bundle the web UI static files
         ('promptpilot/static', 'promptpilot/static'),
+        ('promptpilot/task_history_source.py', 'promptpilot'),
     ] + tg_datas + httpx_datas,
     hiddenimports=[
         # uvicorn dynamic imports

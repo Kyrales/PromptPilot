@@ -34,11 +34,11 @@
 
 **Interfaces:** `record_user(conn, task_id, text, source_key)`, `begin_attempt(task_id, source, project_key) -> int`, `append_message(task_id, attempt_id, role, text, source_key, partial=False)`, `deliver_user_messages(attempt_id, note)`, `mark_gap(attempt_id, reason)`, `finish_attempt(attempt_id)`.
 
-- [ ] Write tests for initial prompt, note edits and delivery, separate retries, source deduplication/revisions, deleted-task cleanup and unsupported-source coverage. Assert exact roles/text and durable records after reopening the database.
-- [ ] Run `./.venv/Scripts/python.exe -m pytest tests/test_task_history.py -q`; confirm feature assertions fail.
-- [ ] Add history tables with cascading task foreign keys to DB schema. Record prompts/notes within existing transactions. Persist immutable message revisions and attempt rows; do not use retry_count as attempt identity.
-- [ ] Run the history tests and `tests/test_db_init.py`, `tests/test_schedule_series.py`.
-- [ ] Commit storage and tests.
+- [x] Write tests for initial prompt, note edits and delivery, separate retries, source deduplication/revisions, deleted-task cleanup and unsupported-source coverage. Assert exact roles/text and durable records after reopening the database.
+- [x] Run `./.venv/Scripts/python.exe -m pytest tests/test_task_history.py -q`; confirm feature assertions fail.
+- [x] Add history tables with cascading task foreign keys to DB schema. Record prompts/notes within existing transactions. Persist immutable message revisions and attempt rows; do not use retry_count as attempt identity.
+- [x] Run the history tests and `tests/test_db_init.py`, `tests/test_schedule_series.py`.
+- [x] Commit storage and tests.
 
 ### Task 2: Snapshot read, scoped search and credentials
 
@@ -46,12 +46,12 @@
 
 **Interfaces:** `read_task(task_id, current_task_id, cursor=None, limit=12000) -> dict`, `search_tasks(current_task_id, query='', all_projects=False, offset=0) -> dict`, `issue_token(current_task_id) -> str`, `verify_token(token) -> int | None`.
 
-- [ ] Write tests reconstructing a long message across pages and freezing revisions/new messages, expired/invalid/cross-task cursors, missing/deleted task, no continuation traversal, legacy prompt-only fallback, project/machine boundaries and explicit all-project search. Assert search snippets match query and contain no unrelated full dialogue.
-- [ ] Write API/CLI tests for existing auth and a context token that permits only GET context routes; malformed/expired tokens cannot bypass auth, including when general API auth is disabled. CLI local access is bound to explicit DB path and instance ID; remote failures do not fall back to local data.
-- [ ] Confirm failures with `pytest tests/test_task_context.py -q`.
-- [ ] Implement materialized snapshot tables (JSON message copies and cursor position, TTL cleanup), bounded pagination, basic Unicode casefold substring search and brief cards. Legacy records supply prompt and gap notice, not unclassified result text.
-- [ ] Add `pp context --access-file PATH read ID [--cursor CURSOR] [--limit N]` and `pp context --access-file PATH search [QUERY] [--all-projects] [--offset N]`; JSON output. Add `/api/context/read/{task_id}` and `/api/context/search`; signed current-task credentials accepted exclusively on these GET routes.
-- [ ] Run focused tests and existing API/CLI/auth coverage; commit.
+- [x] Write tests reconstructing a long message across pages and freezing revisions/new messages, expired/invalid/cross-task cursors, missing/deleted task, no continuation traversal, legacy prompt-only fallback, project/machine boundaries and explicit all-project search. Assert search snippets match query and contain no unrelated full dialogue.
+- [x] Write API/CLI tests for existing auth and a context token that permits only GET context routes; malformed/expired tokens cannot bypass auth, including when general API auth is disabled. CLI local access is bound to explicit DB path and instance ID; remote failures do not fall back to local data.
+- [x] Confirm failures with `pytest tests/test_task_context.py -q`.
+- [x] Implement materialized snapshot tables (JSON message copies and cursor position, TTL cleanup), bounded pagination, basic Unicode casefold substring search and brief cards. Legacy records supply prompt and gap notice, not unclassified result text.
+- [x] Add `pp context --access-file PATH read ID [--cursor CURSOR] [--limit N]` and `pp context --access-file PATH search [QUERY] [--all-projects] [--offset N]`; JSON output. Add `/api/context/read/{task_id}` and `/api/context/search`; signed current-task credentials accepted exclusively on these GET routes.
+- [x] Run focused tests and existing API/CLI/auth coverage; commit.
 
 ### Task 3: Stream and session adapters
 
@@ -59,12 +59,12 @@
 
 **Interfaces:** `StreamCollector(task_id, attempt_id).feed(line)`; stdlib session-source reader accepts marker, earliest time and provider roots, returns only attributed user/assistant messages and coverage information. `SessionCollector` owns polling, final capture and stop.
 
-- [ ] Write realistic Claude/Codex stream and JSONL session fixtures with text, tools, reasoning, duplicate IDs, malformed/truncated records and two task markers in one session. Assert exact extracted conversation and no later-task messages.
-- [ ] Test that running streams persist before task completion, failed/cancelled attempts preserve messages, storage errors do not stop draining pipes, session close retains captured messages, unsupported/detached sources are incomplete.
-- [ ] Run failing source tests.
-- [ ] Implement allowlisted structured-message extraction. Use unique attempt markers for session-file attribution, not terminal-screen role guessing. Local and SSH session capture return bounded structured messages; unsupported adapter/permission/file failures yield explicit gaps. Keep raw terminal output out of history.
-- [ ] Integrate collectors around actual provider execution, with final capture and guaranteed stop; track separate immutable attempt IDs. Use recorded input deliveries to avoid storing synthetic service prompts as user messages.
-- [ ] Run focused tests, `tests/test_codex_prompt_transport.py`, `tests/test_herdr_workflow_completion.py`, `tests/test_process_tree.py`; commit.
+- [x] Write realistic Claude/Codex stream and JSONL session fixtures with text, tools, reasoning, duplicate IDs, malformed/truncated records and two task markers in one session. Assert exact extracted conversation and no later-task messages.
+- [x] Test that running streams persist before task completion, failed/cancelled attempts preserve messages, storage errors do not stop draining pipes, session close retains captured messages, unsupported/detached sources are incomplete.
+- [x] Run failing source tests.
+- [x] Implement allowlisted structured-message extraction. Use unique attempt markers for session-file attribution, not terminal-screen role guessing. Local and SSH session capture return bounded structured messages; unsupported adapter/permission/file failures yield explicit gaps. Keep raw terminal output out of history.
+- [x] Integrate collectors around actual provider execution, with final capture and guaranteed stop; track separate immutable attempt IDs. Use recorded input deliveries to avoid storing synthetic service prompts as user messages.
+- [x] Run focused tests, `tests/test_codex_prompt_transport.py`, `tests/test_herdr_workflow_completion.py`, `tests/test_process_tree.py`; commit.
 
 ### Task 4: Agent access and project identity for every launch
 
@@ -72,12 +72,12 @@
 
 **Interfaces:** `prepare_access(task, attempt_id, host=None) -> (instruction: str, access_file: str)`; `project_identity(path, machine=None, host=None) -> str | None`.
 
-- [ ] Write tests for normal/headless/herdr/target/remote invocation: explicit source instance and current task, same-repository existing worktree identity, remote machine separation, no secret in saved messages, stale target env ignored, no scope widening without user request instruction.
-- [ ] Confirm failures.
-- [ ] Resolve Git common directory on execution machine, normalize non-Git absolute paths, persist attempt identity; get actual cwd for attached target panes.
-- [ ] Generate private task-scoped access files. Local file pins absolute DB path and instance ID; remote file contains configured `PP_CONTEXT_URL`, read-only token and expected instance ID. Copy remote file through existing SSH machinery without logging secrets. No remote URL means explicit unavailable instruction, no fallback.
-- [ ] Inject a short instruction after provider routing and before every actual launch, including pre-existing targets; use explicit `--access-file` so stale environment cannot select another task. Use current executable/module invocation locally and installed `pp` remotely. Keep service instructions and credentials out of user-message storage. Preserve closing verdict contract ordering.
-- [ ] Run execution tests and existing headless/herdr/pipeline transport checks; commit.
+- [x] Write tests for normal/headless/herdr/target/remote invocation: explicit source instance and current task, same-repository existing worktree identity, remote machine separation, no secret in saved messages, stale target env ignored, no scope widening without user request instruction.
+- [x] Confirm failures.
+- [x] Resolve Git common directory on execution machine, normalize non-Git absolute paths, persist attempt identity; get actual cwd for attached target panes.
+- [x] Generate private task-scoped access files. Local file pins absolute DB path and instance ID; remote file contains configured `PP_CONTEXT_URL`, read-only token and expected instance ID. Copy remote file through existing SSH machinery without logging secrets. No remote URL means explicit unavailable instruction, no fallback.
+- [x] Inject a short instruction after provider routing and before every actual launch, including pre-existing targets; use explicit `--access-file` so stale environment cannot select another task. Use current executable/module invocation locally and installed `pp` remotely. Keep service instructions and credentials out of user-message storage. Preserve closing verdict contract ordering.
+- [x] Run execution tests and existing headless/herdr/pipeline transport checks; commit.
 
 ### Task 5: Documentation, final review and verification
 
